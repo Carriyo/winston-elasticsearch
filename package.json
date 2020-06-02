@@ -55,7 +55,7 @@
     "should": "^13.2.3"
   },
   "scripts": {
-    "test": "nyc mocha",
+    "test": "TEST_ENV=TRUE nyc mocha",
     "lint": "eslint *.json *.js",
     "mocha": "mocha --full-trace./test/* -- --trace-warnings",
     "coveralls": "nyc report --reporter=text-lcov | coveralls"

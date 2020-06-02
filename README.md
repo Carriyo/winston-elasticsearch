@@ -42,12 +42,16 @@ var winston = require('winston');
 var ElasticsearchTransport = require('winston-elasticsearch');
 
 var esTransportOpts = {
-  level: 'info'
+  level: 'info',
+  handleExceptions: true,
+  handleRejections: true
 };
 var logger = winston.createLogger({
   transports: [
     new ElasticsearchTransport(esTransportOpts)
   ]
+  exitOnError: false, // this needs to be done along with
+  // handleExceptions or handleRejections true
 });
 ```
 
@@ -73,6 +77,8 @@ If multiple objects are provided as arguments, the contents are stringified.
 - `buffering` [true] Boolean flag to enable or disable messages buffering. The `bufferLimit` option is ignored if set to `false`.
 - `bufferLimit` [null] Limit for the number of log messages in the buffer.
 - `apm` [null] Inject [apm client](https://www.npmjs.com/package/elastic-apm-node) to link elastic logs with elastic apm traces.
+- `handleExceptions` [false] supress exceptions. make sure logger.exitOnError = false
+- `handleRejections` [false] supress promise exceptions. make sure logger.exitOnError = false
 
 ### Logging of ES Client
 

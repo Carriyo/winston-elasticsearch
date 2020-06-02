@@ -24,6 +24,15 @@ function NullLogger(config) {
   this.close = function(msg) { };
 }
 
+process.on('unhandledRejection', (error) => {
+  console.error(error);
+  process.exit(1);
+});
+process.on('uncaughtException', (error) => {
+  console.error(error);
+  process.exit(1);
+});
+
 function createLogger(buffering) {
   return winston.createLogger({
     transports: [
@@ -113,14 +122,13 @@ describe('a buffering logger', function () {
     transport.client.bulk = function() {
       return Promise.reject(new Error('Test Error'))
     };
-    logger.info('test');
-
     logger.on('error', (err) => {
       should.exist(err);
       transport.bulkWriter.bulk.should.have.lengthOf(1);
       transport.bulkWriter.bulk = []; // manually clear the buffer of stop transport from attempting to flush logs.
       done();
     });
+    logger.info('test');
     logger.end();
   });
 

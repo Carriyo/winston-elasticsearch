@@ -23,13 +23,19 @@ class ElasticsearchTransport extends Transport {
     });
 
     this.on('error', (err) => {
-      this.source.pipe(this); // re-pipes readable
+      // if there is an error after stream ends then calling this.source.pipe(this)
+      // would throw unhandled exception (regardless of winston transport's handleExceptions flag).
+      // if that's so, then test should crash. But on prod, the server shouldn't.
+
+      // eslint-disable-next-line no-underscore-dangle
+      if (!this.source._writableState.ending || process.env.TEST_ENV === 'TRUE') {
+        this.source.pipe(this); // re-pipes readable
+      }
     });
 
     this.on('finish', (info) => {
       this.bulkWriter.schedule = () => {};
     });
-    this.on('error', (err) => {})
     this.opts = opts || {};
 
     // Set defaults
