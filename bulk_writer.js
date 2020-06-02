@@ -141,7 +141,11 @@ BulkWriter.prototype.write = function write(body) {
             attempts: attempts + 1,
           });
         } else {
-          debug('retry attempts exceeded')
+          debug('retry attempts exceeded');
+          thiz.transport.emit('log-error', {
+            message: 'retry attempts exceeded',
+            err: e
+          });
         }
       }
 
@@ -156,7 +160,7 @@ BulkWriter.prototype.write = function write(body) {
       debug('error occurred', e);
       this.stop();
       this.checkEsConnection();
-      thiz.transport.emit('error', e);
+      thiz.transport.emit('warn', e);
     });
 };
 

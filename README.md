@@ -43,15 +43,11 @@ var ElasticsearchTransport = require('winston-elasticsearch');
 
 var esTransportOpts = {
   level: 'info',
-  handleExceptions: true,
-  handleRejections: true
 };
 var logger = winston.createLogger({
   transports: [
     new ElasticsearchTransport(esTransportOpts)
   ]
-  exitOnError: false, // this needs to be done along with
-  // handleExceptions or handleRejections true
 });
 ```
 
