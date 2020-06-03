@@ -99,6 +99,10 @@ BulkWriter.prototype.append = function append(index, type, doc) {
       attempts: 0
     });
   } else {
+    // if not running can't write
+    if (!this.running) {
+      return;
+    }
     this.write([
       { index: { _index: index, _type: type, pipeline: this.pipeline } },
       doc
@@ -140,6 +144,10 @@ BulkWriter.prototype.write = function write(body) {
           });
         } else {
           debug('retry attempts exceeded');
+          thiz.transport.emit('log-error', {
+            message: 'retry attempts exceeded',
+            err: e
+          });
         }
       }
 
@@ -154,7 +162,7 @@ BulkWriter.prototype.write = function write(body) {
       debug('error occurred', e);
       this.stop();
       this.checkEsConnection();
-      thiz.transport.emit('error', e);
+      thiz.transport.emit('warn', e);
     });
 };
 
@@ -163,14 +171,15 @@ BulkWriter.prototype.checkEsConnection = function checkEsConnection() {
   thiz.esConnection = false;
 
   const operation = retry.operation({
-    forever: true,
+    // test will never end if mapping template creation is retried forever
+    forever: process.env.TEST_ENV !== 'TRUE',
     retries: 1,
     factor: 1,
     minTimeout: 1 * 1000,
     maxTimeout: 60 * 1000,
     randomize: false
   });
-  return new Promise((fulfill, reject) => {
+  return setTimeout(() => {
     operation.attempt((currentAttempt) => {
       debug('checking for connection');
       thiz.client.cluster.health({
@@ -181,16 +190,26 @@ BulkWriter.prototype.checkEsConnection = function checkEsConnection() {
         .then(
           (res) => {
             thiz.esConnection = true;
+            const startWriter = () => {
+              if (thiz.options.buffering === true) {
+                debug('starting bulk writer');
+                thiz.running = true;
+                thiz.tick();
+              }
+            };
             // Ensure mapping template is existing if desired
             if (thiz.options.ensureMappingTemplate) {
-              thiz.ensureMappingTemplate(fulfill, reject);
+              thiz.ensureMappingTemplate((res1) => {
+                startWriter();
+              }, (err) => {
+                debug('retrying mapping template creation');
+                if (operation.retry(err)) {
+                  return;
+                }
+                thiz.transport.emit('error', err);
+              });
             } else {
-              fulfill(true);
-            }
-            if (thiz.options.buffering === true) {
-              debug('starting bulk writer');
-              thiz.running = true;
-              thiz.tick();
+              startWriter();
             }
           },
           (err) => {
@@ -199,11 +218,11 @@ BulkWriter.prototype.checkEsConnection = function checkEsConnection() {
               return;
             }
             // thiz.esConnection = false;
-            reject(new Error('Cannot connect to ES'));
+            thiz.transport.emit('error', err);
           }
         );
     });
-  });
+  }, 0);
 };
 
 BulkWriter.prototype.ensureMappingTemplate = function ensureMappingTemplate(
@@ -241,7 +260,6 @@ BulkWriter.prototype.ensureMappingTemplate = function ensureMappingTemplate(
             fulfill(res1.body);
           },
           (err1) => {
-            thiz.transport.emit('error', err1);
             reject(err1);
           }
         );
@@ -249,9 +267,8 @@ BulkWriter.prototype.ensureMappingTemplate = function ensureMappingTemplate(
         fulfill(res.body);
       }
     },
-    (res) => {
-      thiz.transport.emit('error', res);
-      reject(res);
+    (err) => {
+      reject(err);
     }
   );
 };

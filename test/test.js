@@ -92,6 +92,9 @@ describe('a buffering logger', function () {
     logger.on('error', (err) => {
       should.not.exist(err);
     });
+    logger.on('warn', (err) => {
+      should.not.exist(err);
+    });
     logger.end();
   });
 
@@ -109,6 +112,9 @@ describe('a buffering logger', function () {
     logger.on('error', (err) => {
       should.not.exist(err);
     });
+    logger.on('warn', (err) => {
+      should.not.exist(err);
+    });
     logger.end();
   });
 
@@ -122,14 +128,17 @@ describe('a buffering logger', function () {
     transport.client.bulk = function() {
       return Promise.reject(new Error('Test Error'))
     };
-    logger.info('test');
-
     logger.on('error', (err) => {
+      should.not.exist(err);
+    });
+    logger.on('warn', (err) => {
+      console.log('got it!!!', err);
       should.exist(err);
       transport.bulkWriter.bulk.should.have.lengthOf(1);
       transport.bulkWriter.bulk = []; // manually clear the buffer of stop transport from attempting to flush logs.
       done();
     });
+    logger.info('test');
     logger.end();
   });
 
@@ -177,6 +186,9 @@ describe('a non buffering logger', function () {
       done();
     });
     logger.on('error', (err) => {
+      should.not.exist(err);
+    });
+    logger.on('warn', (err) => {
       should.not.exist(err);
     });
     logger.end();
