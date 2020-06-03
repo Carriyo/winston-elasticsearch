@@ -16,6 +16,10 @@ const BulkWriter = function BulkWriter(transport, client, options) {
   this.retryLimit = options.retryLimit || 5;
 
   this.bulk = []; // bulk to be flushed
+  // logger is only "initialized" when at least one connection to ES is
+  // made, and if the template mapping is sucessfully written (if template
+  // mapping is enabled).
+  this.initialized = false;
   this.running = false;
   this.timer = false;
   debug('created', this);
@@ -64,6 +68,8 @@ BulkWriter.prototype.flush = function flush() {
   if (this.bulk.length === 0) {
     debug('nothing to flush');
     return new Promise((resolve) => {
+      // pause if nothing is there to write
+      this.running = false;
       return resolve();
     });
   }
@@ -98,9 +104,14 @@ BulkWriter.prototype.append = function append(index, type, doc) {
       doc,
       attempts: 0
     });
+    // resume the buffering process
+    if (this.initialized && !this.running) {
+      this.running = true;
+      this.tick();
+    }
   } else {
-    // if not running can't write
-    if (!this.running) {
+    // if not initialized can't write
+    if (!this.initialized) {
       return;
     }
     this.write([
@@ -191,6 +202,7 @@ BulkWriter.prototype.checkEsConnection = function checkEsConnection() {
           (res) => {
             thiz.esConnection = true;
             const startWriter = () => {
+              thiz.initialized = true;
               if (thiz.options.buffering === true) {
                 debug('starting bulk writer');
                 thiz.running = true;
