@@ -88,9 +88,9 @@ BulkWriter.prototype.append = function append(index, type, doc) {
       typeof this.options.bufferLimit === 'number'
       && this.bulk.length >= this.options.bufferLimit
     ) {
+      const msg = this.bulk.pop();
       debug('message discarded because buffer limit exceeded');
-      // @todo: i guess we can use callback to notify caller
-      return;
+      this.transport.emit('winston-elasticsearch-message-discarded', msg);
     }
     this.bulk.unshift({
       index,
