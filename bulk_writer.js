@@ -96,7 +96,7 @@ BulkWriter.prototype.append = function append(index, type, doc) {
     ) {
       const msg = this.bulk.pop();
       debug('message discarded because buffer limit exceeded');
-      this.transport.emit('winston-elasticsearch-message-discarded', msg);
+      this.transport.emit('log-discarded', msg);
     }
     this.bulk.unshift({
       index,
