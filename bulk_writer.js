@@ -195,7 +195,7 @@ BulkWriter.prototype.checkEsConnection = function checkEsConnection() {
       debug('checking for connection');
       thiz.client.cluster.health({
         timeout: '5s',
-        wait_for_nodes: '1',
+        wait_for_nodes: '>=1',
         wait_for_status: 'yellow'
       })
         .then(
