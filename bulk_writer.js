@@ -16,6 +16,10 @@ const BulkWriter = function BulkWriter(transport, client, options) {
   this.retryLimit = options.retryLimit || 5;
 
   this.bulk = []; // bulk to be flushed
+  // logger is only "initialized" when at least one connection to ES is
+  // made, and if the template mapping is sucessfully written (if template
+  // mapping is enabled).
+  this.initialized = false;
   this.running = false;
   this.timer = false;
   debug('created', this);
@@ -64,13 +68,17 @@ BulkWriter.prototype.flush = function flush() {
   if (this.bulk.length === 0) {
     debug('nothing to flush');
     return new Promise((resolve) => {
+      // pause if nothing is there to write
+      this.running = false;
       return resolve();
     });
   }
   const bulk = this.bulk.concat();
   this.bulk = [];
   const body = [];
-  bulk.forEach(({ index, type, doc, attempts }) => {
+  bulk.forEach(({
+    index, type, doc, attempts
+  }) => {
     body.push(
       { index: { _index: index, _type: type, pipeline: this.pipeline }, attempts },
       doc
@@ -83,8 +91,8 @@ BulkWriter.prototype.flush = function flush() {
 BulkWriter.prototype.append = function append(index, type, doc) {
   if (this.options.buffering === true) {
     if (
-      typeof this.options.bufferLimit === 'number' &&
-      this.bulk.length >= this.options.bufferLimit
+      typeof this.options.bufferLimit === 'number'
+      && this.bulk.length >= this.options.bufferLimit
     ) {
       debug('message discarded because buffer limit exceeded');
       // @todo: i guess we can use callback to notify caller
@@ -96,7 +104,16 @@ BulkWriter.prototype.append = function append(index, type, doc) {
       doc,
       attempts: 0
     });
+    // resume the buffering process
+    if (this.initialized && !this.running) {
+      this.running = true;
+      this.tick();
+    }
   } else {
+    // if not initialized can't write
+    if (!this.initialized) {
+      return;
+    }
     this.write([
       { index: { _index: index, _type: type, pipeline: this.pipeline } },
       doc
@@ -128,7 +145,7 @@ BulkWriter.prototype.write = function write(body) {
       // rollback this.bulk array
       const newBody = [];
       for (let i = 0; i < body.length; i += 2) {
-        const attempts = body[i].attempts;
+        const { attempts } = body[i];
         if (attempts < thiz.retryLimit) {
           newBody.push({
             index: body[i].index._index,
@@ -137,7 +154,7 @@ BulkWriter.prototype.write = function write(body) {
             attempts: attempts + 1,
           });
         } else {
-          debug('retry attempts exceeded')
+          debug('retry attempts exceeded');
         }
       }
 
@@ -174,31 +191,43 @@ BulkWriter.prototype.checkEsConnection = function checkEsConnection() {
       thiz.client.cluster.health({
         timeout: '5s',
         wait_for_nodes: '1',
-        wait_for_status: 'yellow'})
+        wait_for_status: 'yellow'
+      })
         .then(
-        (res) => {
-          thiz.esConnection = true;
-          // Ensure mapping template is existing if desired
-          if (thiz.options.ensureMappingTemplate) {
-            thiz.ensureMappingTemplate(fulfill, reject);
-          } else {
-            fulfill(true);
+          (res) => {
+            thiz.esConnection = true;
+            const startWriter = () => {
+              thiz.initialized = true;
+              if (thiz.options.buffering === true) {
+                debug('starting bulk writer');
+                thiz.running = true;
+                thiz.tick();
+              }
+            };
+            // Ensure mapping template is existing if desired
+            if (thiz.options.ensureMappingTemplate) {
+              thiz.ensureMappingTemplate((res1) => {
+                startWriter();
+              }, (err) => {
+                debug('retrying mapping template creation');
+                if (operation.retry(err)) {
+                  return;
+                }
+                thiz.transport.emit('error', err);
+              });
+            } else {
+              startWriter();
+            }
+          },
+          (err) => {
+            debug('checking for connection');
+            if (operation.retry(err)) {
+              return;
+            }
+            // thiz.esConnection = false;
+            thiz.transport.emit('error', err);
           }
-          if (thiz.options.buffering === true) {
-            debug('starting bulk writer');
-            thiz.running = true;
-            thiz.tick();
-          }
-        },
-        (err) => {
-          debug('checking for connection');
-          if (operation.retry(err)) {
-            return;
-          }
-          // thiz.esConnection = false;
-          reject(new Error('Cannot connect to ES'));
-        }
-      );
+        );
     });
   });
 };
@@ -209,10 +238,9 @@ BulkWriter.prototype.ensureMappingTemplate = function ensureMappingTemplate(
 ) {
   const thiz = this;
 
-  const indexPrefix =
-    typeof thiz.options.indexPrefix === 'function'
-      ? thiz.options.indexPrefix()
-      : thiz.options.indexPrefix;
+  const indexPrefix = typeof thiz.options.indexPrefix === 'function'
+    ? thiz.options.indexPrefix()
+    : thiz.options.indexPrefix;
   // eslint-disable-next-line prefer-destructuring
   let mappingTemplate = thiz.options.mappingTemplate;
   if (mappingTemplate === null || typeof mappingTemplate === 'undefined') {
