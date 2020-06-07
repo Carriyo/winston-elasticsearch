@@ -211,9 +211,7 @@ BulkWriter.prototype.checkEsConnection = function checkEsConnection() {
             };
             // Ensure mapping template is existing if desired
             if (thiz.options.ensureMappingTemplate) {
-              thiz.ensureMappingTemplate((res1) => {
-                startWriter();
-              }, (err) => {
+              thiz.ensureMappingTemplate(startWriter, (err) => {
                 debug('retrying mapping template creation');
                 if (operation.retry(err)) {
                   return;
@@ -249,8 +247,11 @@ BulkWriter.prototype.ensureMappingTemplate = function ensureMappingTemplate(
   // eslint-disable-next-line prefer-destructuring
   let mappingTemplate = thiz.options.mappingTemplate;
   if (mappingTemplate === null || typeof mappingTemplate === 'undefined') {
+    // es version 6 and below will use 'index-template-mapping-es-lte-6.json'
+    // 7 and above will use 'index-template-mapping-es-gte-7.json'
+    const esVersion = Number(thiz.options.elasticsearchVersion) >= 7 ? 'gte-7' : 'lte-6';
     const rawdata = fs.readFileSync(
-      path.join(__dirname, 'index-template-mapping.json')
+      path.join(__dirname, 'index-template-mapping-es-' + esVersion + '.json')
     );
     mappingTemplate = JSON.parse(rawdata);
     mappingTemplate.index_patterns = indexPrefix + '-*';
